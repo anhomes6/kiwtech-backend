@@ -161,13 +161,17 @@ module.exports = async (req, res) => {
         await sendActivationEmail(email, label, expiresAt);
         console.log(`✅ Email sent to ${email}`);
       } catch (emailErr) {
-        console.error('❌ Email failed:', emailErr.message);
-      }
+      console.error('❌ Email failed:', emailErr.message);
     }
-
-    return res.status(200).json({ received: true });
-  } catch (err) {
-    console.error('❌ Webhook error:', err.message);
-    return res.status(500).json({ error: err.message });
   }
+
+  return res.status(200).json({ received: true });
+} catch (err) {
+  console.error('❌ Webhook error:', err.message);
+  return res.status(500).json({ error: err.message });
+}
+};
+
+module.exports.config = {
+  api: { bodyParser: false }
 };
