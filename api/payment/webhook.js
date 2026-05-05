@@ -58,7 +58,7 @@ async function sendActivationEmail(email, planLabel, expiresAt) {
         </div>
       </div>
       <div style="text-align:center;margin-bottom:28px;">
-        <a href="${ZIP_LINK}" style="display:inline-block;background:linear-gradient(135deg,#00c9b1,#4d7cfe);color:#ffffff;text-decoration:none;padding:14px 32px;border-radius:10px;font-size:15px;font-weight:700;">
+        <a href="https://drive.google.com/file/d/1YVmrhNT7F-I8KuftoZuswDaXwgXQuyQ5/view?usp=sharing" style="display:inline-block;background:linear-gradient(135deg,#00c9b1,#4d7cfe);color:#ffffff;text-decoration:none;padding:14px 32px;border-radius:10px;font-size:15px;font-weight:700;">
           📦 Extension Download Karo
         </a>
       </div>
