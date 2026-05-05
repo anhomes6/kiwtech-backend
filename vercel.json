@@ -3,5 +3,14 @@
     "api/**/*.js": {
       "memory": 1024
     }
-  }
+  },
+  "routes": [
+    {
+      "src": "/api/payment/webhook",
+      "dest": "/api/payment/webhook.js",
+      "headers": {
+        "x-vercel-skip-body-parse": "1"
+      }
+    }
+  ]
 }
