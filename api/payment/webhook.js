@@ -114,7 +114,7 @@ async function sendActivationEmail(email, planLabel, expiresAt) {
 module.exports = async (req, res) => {
   const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
   const signature = req.headers['x-razorpay-signature'];
-  const body = JSON.stringify(req.body);
+  const body = req.rawBody || JSON.stringify(req.body); 
   const expected = crypto.createHmac('sha256', secret).update(body).digest('hex');
 
   if (signature !== expected) return res.status(400).json({ error: 'Invalid signature' });
