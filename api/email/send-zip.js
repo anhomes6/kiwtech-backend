@@ -4,14 +4,14 @@
 // ║  (or static URLs if you host ZIPs elsewhere)             ║
 // ╚════════════════════════════════════════════════════════╝
 import { sb } from '../../lib/supabase.js';
-import { sendEmail, emailWrap } from '../../lib/helpers.js';
+import { sendEmail, emailWrap, handleCors } from '../../lib/helpers.js';
 
 // ── Config: where ZIP files are hosted ───────────────────
 // OPTION A: Upload to Supabase Storage bucket 'tools' (recommended)
 // OPTION B: Static URLs (Google Drive direct download links / GitHub releases)
 const ZIP_URLS = {
-  shipping: process.env.SHIPPING_ZIP_URL || 'https://github.com/arshittraders/kiwtech-shipping/releases/latest/download/shipping.zip',
-  listing:  process.env.LISTING_ZIP_URL  || 'https://github.com/arshittraders/kiwtech-listing/releases/latest/download/listing.zip'
+  shipping: process.env.SHIPPING_ZIP_URL || 'https://github.com/anhomes6/kiwtech-tools/releases/latest/download/shipping.zip',
+  listing:  process.env.LISTING_ZIP_URL  || 'https://github.com/anhomes6/kiwtech-tools/releases/latest/download/listing.zip'
 };
 
 const TOOL_LABELS = {
@@ -20,8 +20,8 @@ const TOOL_LABELS = {
   combo:    '🎁 Kiwtech Combo Pack'
 };
 
-// ── Main: send activation email with ZIP link(s) ─────────
-export async function sendActivationEmail({ email, tool, plan, expiresAt }) {
+// ── Main: send activation/download email with ZIP link(s) ─
+export async function sendActivationEmail({ email, tool, plan, expiresAt, isDemo = false }) {
   const SITE = process.env.SITE_URL || 'https://kiwtech-website.vercel.app';
   const expiry = new Date(expiresAt).toLocaleDateString('en-IN', {
     day: '2-digit', month: 'short', year: 'numeric'
@@ -40,13 +40,18 @@ export async function sendActivationEmail({ email, tool, plan, expiresAt }) {
     </div>
   `).join('');
 
+  const headerText = isDemo ? '⚡ Demo Tool Download' : '🎉 Subscription Activated!';
+  const introText = isDemo
+    ? `Aapka FREE demo active hai for <strong>${TOOL_LABELS[tool]}</strong>. Niche se tool download karo.`
+    : `Bahut shukriya! Aapka <strong>${TOOL_LABELS[tool]}</strong> activate ho gaya hai.`;
+
   const html = emailWrap(`
-    <h2 style="margin-top:0;color:#0e1522;">🎉 Subscription Activated!</h2>
-    <p>Bahut shukriya bhai! Tera <strong>${TOOL_LABELS[tool]}</strong> activate ho gaya hai.</p>
+    <h2 style="margin-top:0;color:#0e1522;">${headerText}</h2>
+    <p>${introText}</p>
 
     <div style="background:#f0fdfa;border-left:4px solid #00c9b1;padding:14px 18px;border-radius:8px;margin:18px 0;">
       <p style="margin:0;font-size:13px;color:#065f46;">
-        <strong>Plan:</strong> ${plan.toUpperCase()}<br/>
+        <strong>${isDemo ? 'Demo' : 'Plan'}:</strong> ${plan.toUpperCase()}<br/>
         <strong>Valid till:</strong> ${expiry}<br/>
         <strong>Account:</strong> ${email}
       </p>
@@ -77,45 +82,97 @@ export async function sendActivationEmail({ email, tool, plan, expiresAt }) {
     </p>
   `);
 
+  const subjectPrefix = isDemo ? '⚡ Demo Tool —' : '✅';
   return sendEmail({
     to: email,
-    subject: `✅ ${TOOL_LABELS[tool]} — Activated!`,
+    subject: `${subjectPrefix} ${TOOL_LABELS[tool]}`,
     html
   });
 }
 
-// ── HTTP endpoint version (for manual re-send) ───────────
+// ── HTTP endpoint version (for manual re-send / dashboard download button) ─
 export default async function handler(req, res) {
+  // FIX: Handle CORS preflight
+  if (handleCors(req, res)) return;
+
   if (req.method !== 'POST') {
     return res.status(405).json({ success: false, error: 'POST only' });
   }
   try {
-    const { email, tool = 'shipping' } = req.body || {};
-    if (!email) return res.status(400).json({ success: false, error: 'email required' });
+    const email = (req.body?.email || '').toLowerCase().trim();
+    const tool  = req.body?.tool  || 'shipping';
 
-    // Verify they have a real subscription
+    if (!email) return res.status(400).json({ success: false, error: 'email required' });
+    if (!['shipping', 'listing', 'combo'].includes(tool)) {
+      return res.status(400).json({ success: false, error: 'invalid tool' });
+    }
+
+    const now = new Date().toISOString();
+
+    // ── Check active subscription first (matching tool OR combo) ─
     const { data: sub } = await sb
       .from('subscriptions')
-      .select('plan, expires_at')
+      .select('plan, expires_at, tool')
       .eq('email', email)
-      .eq('tool', tool)
+      .in('tool', [tool, 'combo'])
       .eq('status', 'active')
+      .gt('expires_at', now)
       .order('expires_at', { ascending: false })
       .limit(1)
       .maybeSingle();
 
-    if (!sub) {
-      return res.status(403).json({ success: false, error: 'No active subscription' });
+    if (sub) {
+      try {
+        await sendActivationEmail({
+          email, tool,
+          plan: sub.plan,
+          expiresAt: sub.expires_at,
+          isDemo: false
+        });
+        console.log('✅ activation email sent to:', email);
+        return res.status(200).json({ success: true });
+      } catch (emailErr) {
+        console.error('❌ activation email failed:', emailErr.message);
+        return res.status(500).json({ success: false, error: 'Email send failed: ' + emailErr.message });
+      }
     }
 
-    await sendActivationEmail({
-      email, tool,
-      plan: sub.plan,
-      expiresAt: sub.expires_at
+    // ── No subscription? Check active demo (allow demo download too) ─
+    const { data: demo } = await sb
+      .from('demos')
+      .select('expires_at, tool')
+      .eq('email', email)
+      .in('tool', [tool, 'combo'])
+      .eq('status', 'active')
+      .gt('expires_at', now)
+      .order('expires_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (demo) {
+      try {
+        await sendActivationEmail({
+          email, tool,
+          plan: 'demo',
+          expiresAt: demo.expires_at,
+          isDemo: true
+        });
+        console.log('✅ demo download email sent to:', email);
+        return res.status(200).json({ success: true });
+      } catch (emailErr) {
+        console.error('❌ demo download email failed:', emailErr.message);
+        return res.status(500).json({ success: false, error: 'Email send failed: ' + emailErr.message });
+      }
+    }
+
+    // ── No active subscription or demo ──────────────────────
+    return res.status(403).json({
+      success: false,
+      error: 'No active subscription or demo found for this tool'
     });
 
-    return res.status(200).json({ success: true });
   } catch (e) {
+    console.error('send-zip error:', e);
     return res.status(500).json({ success: false, error: e.message });
   }
 }
