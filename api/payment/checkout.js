@@ -1,199 +1,173 @@
-// api/payment/checkout.js
-// Razorpay checkout HTML page — opens automatically in user's browser
-// Webhook handles actual subscription activation server-side
+// ╔════════════════════════════════════════════════════════╗
+// ║  GET /api/payment/checkout                               ║
+// ║  Query: order_id, amount, email, tool, plan, key        ║
+// ║  Returns HTML page that loads Razorpay checkout SDK     ║
+// ╚════════════════════════════════════════════════════════╝
+import { handleCors } from '../../lib/helpers.js';
 
 export default function handler(req, res) {
-  const { order_id, amount, email, plan, key } = req.query;
+  if (handleCors(req, res)) return;
 
-  if (!order_id || !amount || !email || !plan || !key) {
-    res.setHeader('Content-Type', 'text/html');
-    return res.status(400).send(`
-      <html><body style="font-family:sans-serif;text-align:center;padding:40px">
-        <h2>❌ Invalid checkout link</h2>
-        <p>Missing required parameters. Please try again from the extension.</p>
-      </body></html>
-    `);
+  const { order_id, amount, email, tool = 'shipping', plan = 'monthly', key } = req.query || {};
+
+  if (!order_id || !amount || !email || !key) {
+    res.status(400).send('Missing required params');
+    return;
   }
-
-  const planLabels = {
-    monthly:   'Monthly Plan (₹699)',
-    quarterly: 'Quarterly Plan (₹1499)',
-    yearly:    'Yearly Plan (₹3999)'
-  };
-  const planLabel = planLabels[plan] || 'Subscription';
 
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Kiwtech Optimizer — Payment</title>
-  <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-      color: #fff;
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 20px;
-    }
-    .card {
-      background: #1e293b;
-      border: 1px solid #334155;
-      border-radius: 16px;
-      padding: 40px;
-      max-width: 480px;
-      width: 100%;
-      text-align: center;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
-    }
-    .logo {
-      font-size: 40px;
-      margin-bottom: 16px;
-    }
-    h1 {
-      font-size: 22px;
-      margin-bottom: 8px;
-      color: #f1f5f9;
-    }
-    .subtitle {
-      color: #94a3b8;
-      font-size: 14px;
-      margin-bottom: 24px;
-    }
-    .info-box {
-      background: #0f172a;
-      border: 1px solid #334155;
-      border-radius: 12px;
-      padding: 20px;
-      margin-bottom: 24px;
-      text-align: left;
-    }
-    .info-row {
-      display: flex;
-      justify-content: space-between;
-      padding: 8px 0;
-      font-size: 14px;
-    }
-    .info-row .label { color: #94a3b8; }
-    .info-row .value { color: #f1f5f9; font-weight: 500; }
-    .btn {
-      background: linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%);
-      color: white;
-      border: none;
-      padding: 14px 32px;
-      border-radius: 10px;
-      font-size: 16px;
-      font-weight: 600;
-      cursor: pointer;
-      width: 100%;
-      transition: transform 0.1s;
-    }
-    .btn:hover { transform: translateY(-1px); }
-    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-    .status {
-      margin-top: 16px;
-      padding: 12px;
-      border-radius: 8px;
-      font-size: 14px;
-      display: none;
-    }
-    .status.success { background: #064e3b; color: #6ee7b7; display: block; }
-    .status.error   { background: #7f1d1d; color: #fca5a5; display: block; }
-    .status.info    { background: #1e3a8a; color: #93c5fd; display: block; }
-    .footer { color: #64748b; font-size: 12px; margin-top: 24px; }
-  </style>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Kiwtech — Payment</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;600&display=swap" rel="stylesheet"/>
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{
+    font-family:'DM Sans',sans-serif;
+    background:linear-gradient(135deg,#080c14,#0e1522);
+    color:#e8edf8;min-height:100vh;
+    display:flex;align-items:center;justify-content:center;padding:20px;
+  }
+  .card{
+    background:#0e1522;border:1px solid #1a2540;
+    border-radius:18px;padding:36px;max-width:440px;width:100%;
+    text-align:center;
+  }
+  h1{font-family:'Syne',sans-serif;font-size:22px;margin-bottom:8px;
+     background:linear-gradient(90deg,#00c9b1,#4d7cfe);
+     -webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+  .summary{
+    background:#080c14;border:1px solid #1a2540;border-radius:12px;
+    padding:20px;margin:24px 0;text-align:left;
+  }
+  .row{display:flex;justify-content:space-between;padding:8px 0;font-size:14px;}
+  .row b{font-weight:700;color:#00c9b1;}
+  .amt{font-family:'Syne',sans-serif;font-size:32px;font-weight:800;
+       background:linear-gradient(90deg,#00c9b1,#4d7cfe);
+       -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+       margin:8px 0;}
+  .btn{
+    background:linear-gradient(135deg,#00c9b1,#4d7cfe);
+    color:#fff;font-weight:700;font-size:15px;padding:14px 32px;
+    border:none;border-radius:10px;cursor:pointer;width:100%;
+    margin-top:8px;
+  }
+  .btn:disabled{opacity:0.5;cursor:not-allowed;}
+  .status{margin-top:16px;font-size:13px;color:#6b7a99;min-height:18px;}
+  .err{color:#ef4444;}
+  .ok{color:#22c55e;}
+  .spinner{
+    width:36px;height:36px;border:3px solid #1a2540;
+    border-top-color:#00c9b1;border-radius:50%;
+    animation:spin 0.8s linear infinite;margin:18px auto;display:none;
+  }
+  @keyframes spin{to{transform:rotate(360deg)}}
+</style>
 </head>
 <body>
   <div class="card">
-    <div class="logo">🚀</div>
-    <h1>Kiwtech Optimizer</h1>
-    <p class="subtitle">Complete your subscription</p>
-
-    <div class="info-box">
-      <div class="info-row"><span class="label">Plan:</span><span class="value">${planLabel}</span></div>
-      <div class="info-row"><span class="label">Amount:</span><span class="value">₹${(amount / 100).toFixed(2)}</span></div>
-      <div class="info-row"><span class="label">Email:</span><span class="value">${email}</span></div>
+    <h1>⚡ Kiwtech</h1>
+    <p style="color:#6b7a99;font-size:13px;">Secure Payment — Razorpay</p>
+    <div class="summary">
+      <div class="row"><span>Tool</span><b>${escapeHtml(tool.toUpperCase())}</b></div>
+      <div class="row"><span>Plan</span><b>${escapeHtml(plan.toUpperCase())}</b></div>
+      <div class="row"><span>Email</span><b style="font-size:11px;">${escapeHtml(email)}</b></div>
     </div>
-
-    <button class="btn" id="pay-btn" onclick="openRazorpay()">💳 Pay Now</button>
-    <div class="status" id="status"></div>
-
-    <p class="footer">Secured by Razorpay • SSL encrypted</p>
+    <div style="font-size:12px;color:#6b7a99;">Total Amount</div>
+    <div class="amt">₹${escapeHtml(amount)}</div>
+    <button class="btn" id="payBtn" onclick="startPayment()">💳 Pay Now</button>
+    <div class="spinner" id="spinner"></div>
+    <div class="status" id="status">🔒 UPI / Cards / Net Banking — sab supported</div>
   </div>
+<script>
+  const ORDER_ID = ${JSON.stringify(order_id)};
+  const AMOUNT   = ${JSON.stringify(amount)};
+  const EMAIL    = ${JSON.stringify(email)};
+  const TOOL     = ${JSON.stringify(tool)};
+  const PLAN     = ${JSON.stringify(plan)};
+  const KEY      = ${JSON.stringify(key)};
 
-  <script>
-    const ORDER_ID = ${JSON.stringify(order_id)};
-    const AMOUNT   = ${JSON.stringify(amount)};
-    const EMAIL    = ${JSON.stringify(email)};
-    const PLAN     = ${JSON.stringify(plan)};
-    const KEY      = ${JSON.stringify(key)};
-    const PLAN_LABEL = ${JSON.stringify(planLabel)};
+  function startPayment() {
+    document.getElementById('payBtn').disabled = true;
+    document.getElementById('spinner').style.display = 'block';
+    document.getElementById('status').textContent = 'Razorpay khul raha hai...';
 
-    function setStatus(msg, type) {
-      const el = document.getElementById('status');
-      el.textContent = msg;
-      el.className = 'status ' + type;
-    }
+    const opts = {
+      key: KEY,
+      amount: parseInt(AMOUNT) * 100,
+      currency: 'INR',
+      name: 'Kiwtech',
+      description: TOOL.toUpperCase() + ' — ' + PLAN,
+      order_id: ORDER_ID,
+      prefill: { email: EMAIL },
+      theme: { color: '#00c9b1' },
+      handler: function(response) {
+        const s = document.getElementById('status');
+        s.className = 'status ok';
+        s.textContent = '✅ Payment successful! Tool activate ho raha hai...';
+        document.getElementById('spinner').style.display = 'none';
 
-    function openRazorpay() {
-      const btn = document.getElementById('pay-btn');
-      btn.disabled = true;
-      btn.textContent = 'Opening payment...';
-
-      const options = {
-        key: KEY,
-        amount: AMOUNT,
-        currency: 'INR',
-        order_id: ORDER_ID,
-        name: 'Kiwtech Optimizer',
-        description: PLAN_LABEL,
-        prefill: { email: EMAIL },
-        theme: { color: '#0ea5e9' },
-        handler: function(response) {
-          setStatus('✅ Payment successful! Your subscription will activate in a few seconds. You can close this tab.', 'success');
-          btn.style.display = 'none';
-          // Webhook server-side activate karega — extension auto-refresh karega
-          setTimeout(() => {
-            document.querySelector('.subtitle').textContent = 'Payment complete! Refresh extension to see your active plan.';
-          }, 2000);
-        },
-        modal: {
-          ondismiss: function() {
-            btn.disabled = false;
-            btn.textContent = '💳 Pay Now';
-            setStatus('Payment cancelled. Click "Pay Now" to try again.', 'info');
+        // Notify backend (server-side webhook will also confirm)
+        fetch('/api/payment/verify', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({
+            razorpay_order_id:    response.razorpay_order_id,
+            razorpay_payment_id:  response.razorpay_payment_id,
+            razorpay_signature:   response.razorpay_signature,
+            email: EMAIL, tool: TOOL, plan: PLAN
+          })
+        }).then(r => r.json()).then(d => {
+          if (d.success) {
+            s.textContent = '✅ Payment confirmed! Tool email pe bhej diya hai. Dashboard pe jao →';
+            setTimeout(() => {
+              window.location.href = (d.siteUrl || 'https://kiwtech-website.vercel.app') + '/dashboard';
+            }, 2000);
+          } else {
+            s.className = 'status err';
+            s.textContent = '⚠️ Payment ho gaya but activation pending — WhatsApp pe contact karo';
           }
-        }
-      };
-
-      try {
-        const rzp = new Razorpay(options);
-        rzp.on('payment.failed', function(response) {
-          setStatus('❌ Payment failed: ' + (response.error?.description || 'Unknown error'), 'error');
-          btn.disabled = false;
-          btn.textContent = '💳 Pay Now';
+        }).catch(() => {
+          s.className = 'status ok';
+          s.textContent = '✅ Payment ho gaya — webhook se confirm hoga 1-2 min mein';
         });
-        rzp.open();
-      } catch (e) {
-        setStatus('❌ Could not open payment: ' + e.message, 'error');
-        btn.disabled = false;
-        btn.textContent = '💳 Pay Now';
+      },
+      modal: {
+        ondismiss: function() {
+          document.getElementById('payBtn').disabled = false;
+          document.getElementById('spinner').style.display = 'none';
+          const s = document.getElementById('status');
+          s.className = 'status err';
+          s.textContent = 'Payment cancel kiya gaya. Wapas try karo?';
+        }
       }
-    }
-
-    // Auto-open Razorpay on page load
-    window.addEventListener('load', () => {
-      setTimeout(openRazorpay, 500);
+    };
+    const rzp = new Razorpay(opts);
+    rzp.open();
+    rzp.on('payment.failed', function(response) {
+      const s = document.getElementById('status');
+      s.className = 'status err';
+      s.textContent = '❌ Payment failed: ' + (response.error.description || 'Try again');
+      document.getElementById('payBtn').disabled = false;
+      document.getElementById('spinner').style.display = 'none';
     });
-  </script>
+  }
+
+  // Auto-start checkout on load (small delay so page renders first)
+  setTimeout(startPayment, 500);
+</script>
 </body>
 </html>`;
 
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  return res.status(200).send(html);
+  res.status(200).send(html);
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  }[c]));
 }

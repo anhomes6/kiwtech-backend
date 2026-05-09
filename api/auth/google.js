@@ -1,44 +1,69 @@
-const { createClient } = require('@supabase/supabase-js');
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+// ╔════════════════════════════════════════════════════════╗
+// ║  POST /api/auth/google                                  ║
+// ║  Body: { credential: "google_id_token_jwt" }            ║
+// ║  Verifies Google ID token, upserts user, returns email  ║
+// ╚════════════════════════════════════════════════════════╝
+import { OAuth2Client } from 'google-auth-library';
+import { sb, logAudit } from '../../lib/supabase.js';
+import { handleCors } from '../../lib/helpers.js';
 
-module.exports = async (req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  if (req.method === 'OPTIONS') return res.status(200).end();
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+const client = new OAuth2Client(GOOGLE_CLIENT_ID);
 
-  const email = req.query.email || req.body?.email;
-  const name = req.query.name || req.body?.name || '';
-  if (!email) return res.status(400).json({ error: 'Email required' });
+export default async function handler(req, res) {
+  if (handleCors(req, res)) return;
+
+  if (req.method !== 'POST') {
+    return res.status(405).json({ success: false, error: 'POST only' });
+  }
 
   try {
-    const { data: existing } = await supabase
-      .from('users').select('*').eq('email', email).single();
+    const { credential } = req.body || {};
+    if (!credential) {
+      return res.status(400).json({ success: false, error: 'credential (Google ID token) required' });
+    }
 
-    if (!existing) {
-      await supabase.from('users').insert({
-        email, name, created_at: new Date().toISOString()
+    // ── Verify ID token with Google ──────────────────────
+    const ticket = await client.verifyIdToken({
+      idToken: credential,
+      audience: GOOGLE_CLIENT_ID
+    });
+
+    const payload = ticket.getPayload();
+    if (!payload || !payload.email) {
+      return res.status(401).json({ success: false, error: 'Invalid Google token' });
+    }
+
+    const email   = payload.email.toLowerCase();
+    const name    = payload.name    || '';
+    const picture = payload.picture || '';
+
+    // ── Upsert user ──────────────────────────────────────
+    const { data: existing } = await sb
+      .from('users')
+      .select('id')
+      .eq('email', email)
+      .maybeSingle();
+
+    if (existing) {
+      await sb.from('users').update({
+        name, picture, last_login_at: new Date().toISOString()
+      }).eq('email', email);
+    } else {
+      await sb.from('users').insert({
+        email, name, picture, last_login_at: new Date().toISOString()
       });
     }
 
-    const { data: sub } = await supabase
-      .from('subscriptions').select('*').eq('email', email)
-      .eq('status', 'active').gte('expires_at', new Date().toISOString())
-      .order('expires_at', { ascending: false }).limit(1).single();
-
-    const { data: demo } = await supabase
-      .from('demos').select('*').eq('email', email).single();
-
-    let isSubscribed = false, plan = null, expiresAt = null;
-    const isDemoAvailable = !demo;
-
-    if (sub) { isSubscribed = true; plan = sub.plan; expiresAt = sub.expires_at; }
+    logAudit(email, 'login', null, { name });
 
     return res.status(200).json({
-      success: true, email, name,
-      isSubscribed, plan, expiresAt, isDemoAvailable
+      success: true,
+      email, name, picture
     });
-  } catch (err) {
-    return res.status(500).json({ error: err.message });
+
+  } catch (e) {
+    console.error('auth/google error:', e);
+    return res.status(500).json({ success: false, error: e.message });
   }
-};
+}
