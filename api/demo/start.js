@@ -62,9 +62,14 @@ export default async function handler(req, res) {
     logAudit(email, 'demo_start', tool, { hours });
 
     // ── Send demo email with download link ───────────────
-    sendDemoEmail(email, tool, expires).catch(e =>
-      console.warn('demo email failed:', e.message)
-    );
+    // FIX: await karo taaki Vercel serverless function email complete hone tak wait kare
+    try {
+      await sendDemoEmail(email, tool, expires);
+      console.log('✅ demo email sent to:', email);
+    } catch (emailErr) {
+      console.error('❌ demo email failed:', emailErr.message);
+      // Email fail hone par bhi user ko success bhejenge (DB entry ho chuki hai)
+    }
 
     return res.status(200).json({
       success: true,
@@ -96,7 +101,7 @@ async function sendDemoEmail(email, tool, expiresAt) {
 
   const html = emailWrap(`
     <h2 style="margin-top:0;color:#0e1522;">⚡ Demo Started!</h2>
-    <p>Tera FREE demo activate ho gaya hai for <strong>${toolNames[tool]}</strong>.</p>
+    <p>Aapka FREE demo activate ho gaya hai for <strong>${toolNames[tool]}</strong>.</p>
     <div style="background:#f0fdfa;border-left:4px solid #00c9b1;padding:14px 18px;border-radius:8px;margin:18px 0;">
       <p style="margin:0;font-size:13px;color:#065f46;">⏰ <strong>Demo expires:</strong> ${expiry}</p>
     </div>
@@ -107,7 +112,7 @@ async function sendDemoEmail(email, tool, expiresAt) {
       <li>Tool tile pe "Download" click karo</li>
       <li>Extension install karke Meesho pe use karo</li>
     </ol>
-    <p style="margin-top:24px;">Demo khatam hone se pehle subscription le le —
+    <p style="margin-top:24px;">Demo khatam hone se pehle subscription le lo —
        <a href="${SITE}/dashboard" style="background:#00c9b1;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;display:inline-block;font-weight:700;">Plans Dekho →</a>
     </p>
   `);
